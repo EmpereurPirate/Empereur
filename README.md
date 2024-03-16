@@ -32,7 +32,7 @@ Le script téléchargera les fichiers du modèle dans un répertoire portant le 
 
 ## Licence
 
-Ce projet est sous licence MIT. Consultez le fichier [LICENCE](LICENSE) pour plus de détails.
+Ce projet est sous licence MIT.
 
 ## Crédits
 
