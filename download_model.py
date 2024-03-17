@@ -6,10 +6,6 @@ import subprocess
 from tqdm import tqdm
 import json
 
-import os
-import json
-import shutil
-
 def snapshot_download_with_retry(repo_id, local_dir, filename):
     max_retries = 5
     retry_delay = 60
@@ -32,6 +28,12 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
                     expected_total_size = None
 
                 if expected_total_size is not None and existing_file_size == expected_total_size:
+                    # Check if the file can be downloaded successfully without errors
+                    headers = {'Range': f'bytes={existing_file_size}-'}
+                    response = requests.get(url, headers=headers, stream=True)
+                    response.raise_for_status()
+                    response.close()
+
                     print(f"File {filename} already exists and is complete.")
                     return
 
@@ -87,6 +89,7 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
                 time.sleep(retry_delay)
             else:
                 print(f"Failed to download {filename} after {max_retries} attempts. Skipping to the next file.")
+
 
 if __name__ == "__main__":
     print("Starting download function...")
