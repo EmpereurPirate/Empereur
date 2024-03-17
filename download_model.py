@@ -12,6 +12,17 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
     url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
     file_path = os.path.join(local_dir, filename)
     size_info_path = os.path.join(local_dir, "size_info.json")
+    completed_files_path = os.path.join(local_dir, "completed_files.json")
+
+    if os.path.exists(completed_files_path):
+        with open(completed_files_path, 'r') as f:
+            completed_files = json.load(f)
+    else:
+        completed_files = []
+
+    if filename in completed_files:
+        print(f"File {filename} is already completed. Skipping download.")
+        return
 
     for attempt in range(max_retries):
         try:
@@ -28,13 +39,10 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
                     expected_total_size = None
 
                 if expected_total_size is not None and existing_file_size == expected_total_size:
-                    # Check if the file can be downloaded successfully without errors
-                    headers = {'Range': f'bytes={existing_file_size}-'}
-                    response = requests.get(url, headers=headers, stream=True)
-                    response.raise_for_status()
-                    response.close()
-
                     print(f"File {filename} already exists and is complete.")
+                    completed_files.append(filename)
+                    with open(completed_files_path, 'w') as f:
+                        json.dump(completed_files, f)
                     return
 
                 headers = {'Range': f'bytes={existing_file_size}-'}
@@ -69,6 +77,11 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
             size_info[filename] = total_size
             with open(size_info_path, 'w') as f:
                 json.dump(size_info, f)
+
+            # Add the successfully downloaded file to the completed_files list
+            completed_files.append(filename)
+            with open(completed_files_path, 'w') as f:
+                json.dump(completed_files, f)
 
             return
 
