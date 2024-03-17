@@ -4,12 +4,14 @@ import time
 import requests
 import subprocess
 from tqdm import tqdm
+import json
 
 def snapshot_download_with_retry(repo_id, local_dir, filename):
     max_retries = 5
     retry_delay = 60
     url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
     file_path = os.path.join(local_dir, filename)
+    size_info_path = os.path.join(local_dir, "size_info.json")
 
     for attempt in range(max_retries):
         try:
@@ -23,11 +25,18 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
 
             total_size = int(response.headers.get('content-length', 0)) + existing_file_size
 
-            if existing_file_size > 0 and existing_file_size == total_size:
-                print(f"File {filename} already exists and appears to be complete.")
-                return
-
             if existing_file_size > 0:
+                if os.path.exists(size_info_path):
+                    with open(size_info_path, 'r') as f:
+                        size_info = json.load(f)
+                        expected_total_size = size_info.get(filename, total_size)
+                else:
+                    expected_total_size = total_size
+
+                if existing_file_size == expected_total_size:
+                    print(f"File {filename} already exists and is complete.")
+                    return
+
                 print(f"Resuming download of {filename} from {existing_file_size} bytes.")
 
             response.raise_for_status()
@@ -42,14 +51,22 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
 
             progress_bar.close()
             print(f"File {filename} downloaded successfully.")
+
+            # Store the expected total size for this file
+            size_info = {}
+            if os.path.exists(size_info_path):
+                with open(size_info_path, 'r') as f:
+                    size_info = json.load(f)
+            size_info[filename] = total_size
+            with open(size_info_path, 'w') as f:
+                json.dump(size_info, f)
+
             return
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 416:  # Requested Range Not Satisfiable
-                print(f"File {filename} appears to be corrupted. Restarting download from the beginning.")
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                existing_file_size = 0
+                print(f"File {filename} appears to be corrupted. Skipping download.")
+                return
             elif e.response.status_code == 404:
                 print(f"File {filename} not found in the repository. Skipping download.")
                 return
