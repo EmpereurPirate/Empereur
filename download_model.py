@@ -21,8 +21,24 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
         completed_files = []
 
     if filename in completed_files:
-        print(f"File {filename} is already completed. Skipping download.")
-        return
+        print(f"File {filename} is already marked as completed.")
+
+        # Check if the file size is complete
+        if os.path.exists(size_info_path):
+            with open(size_info_path, 'r') as f:
+                size_info = json.load(f)
+                expected_total_size = size_info.get(filename, None)
+
+            if expected_total_size is not None:
+                existing_file_size = os.path.getsize(file_path)
+                if existing_file_size != expected_total_size:
+                    print(f"File {filename} size ({existing_file_size} bytes) does not match the expected size ({expected_total_size} bytes). Resuming download.")
+                else:
+                    print(f"File {filename} is complete and has the expected size ({expected_total_size} bytes).")
+                    return
+        else:
+            print(f"Warning: No size information found for {filename}. Assuming the file is complete.")
+            return
 
     for attempt in range(max_retries):
         try:
@@ -67,23 +83,28 @@ def snapshot_download_with_retry(repo_id, local_dir, filename):
                         f.write(chunk)
 
             progress_bar.close()
-            print(f"File {filename} downloaded successfully.")
 
-            # Store the expected total size for this file
-            size_info = {}
-            if os.path.exists(size_info_path):
-                with open(size_info_path, 'r') as f:
-                    size_info = json.load(f)
-            size_info[filename] = total_size
-            with open(size_info_path, 'w') as f:
-                json.dump(size_info, f)
+            # Check if the download reached 100%
+            if progress_bar.n == total_size:
+                print(f"File {filename} downloaded successfully.")
 
-            # Add the successfully downloaded file to the completed_files list
-            completed_files.append(filename)
-            with open(completed_files_path, 'w') as f:
-                json.dump(completed_files, f)
+                # Store the expected total size for this file
+                size_info = {}
+                if os.path.exists(size_info_path):
+                    with open(size_info_path, 'r') as f:
+                        size_info = json.load(f)
+                size_info[filename] = total_size
+                with open(size_info_path, 'w') as f:
+                    json.dump(size_info, f)
 
-            return
+                # Add the successfully downloaded file to the completed_files list
+                completed_files.append(filename)
+                with open(completed_files_path, 'w') as f:
+                    json.dump(completed_files, f)
+
+                return
+            else:
+                print(f"Download of {filename} stopped before reaching 100%. Resuming download from {progress_bar.n} bytes.")
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 416:  # Requested Range Not Satisfiable
